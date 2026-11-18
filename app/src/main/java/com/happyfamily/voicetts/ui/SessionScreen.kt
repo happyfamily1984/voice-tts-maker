@@ -6,6 +6,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +67,7 @@ fun SessionScreen(
     items: List<String>,
     shortUnits: Boolean,
     onBack: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -82,7 +91,7 @@ fun SessionScreen(
     // 녹음 중 뒤로가기는 먼저 녹음을 멈춘다
     BackHandler(enabled = running) { recorder.stop(); status = "녹음을 멈췄습니다." ; warn = false }
 
-    if (items.isEmpty()) { Page(title, onBack) { Note("녹음할 문구가 없습니다.") }; return }
+    if (items.isEmpty()) { Page(title, onBack, onSettings) { Note("녹음할 문구가 없습니다.") }; return }
 
     fun advance() {
         val n = items.size
@@ -128,93 +137,117 @@ fun SessionScreen(
     val recorded = remember(ver, index) { store.hasText(item) }
     val doneCount = remember(ver) { store.done(items) }
 
-    Page(title, onBack) {
-        ProgressLine("이 묶음", doneCount, items.size)
+    Page("내 목소리 TTS", onBack, onSettings) {
+        // 지금 녹음하는 묶음
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "읽어줄 문장", Modifier.clip(CircleShape).background(Ui.Tint).padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontSize = 14.sp, color = Ui.Ink,
+                )
+                Text(title, Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Ui.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            ProgressLine("이 묶음", doneCount, items.size)
+        }
 
         // 지금 읽을 글자
         Surface(
-            Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-            color = if (speaking) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-            border = BorderStroke(2.dp, if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+            Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp),
+            color = if (speaking) Color(0xFFE9FBF8) else Ui.Glass,
+            border = BorderStroke(if (running) 2.dp else 1.dp, if (running) Ui.Teal else Color.White),
         ) {
-            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("${index + 1} / ${items.size}" + if (recorded) "  · 녹음됨" else "", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                Box(Modifier.heightIn(min = 96.dp), contentAlignment = Alignment.Center) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${index + 1} / ${items.size}" + if (recorded) "  · 녹음됨" else "", color = Ui.Sub, fontSize = 15.sp)
+                Box(Modifier.heightIn(min = 104.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        item, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
-                        fontSize = when { item.length <= 2 -> 72.sp; item.length <= 6 -> 44.sp; item.length <= 14 -> 30.sp; else -> 22.sp },
-                        lineHeight = when { item.length <= 2 -> 80.sp; item.length <= 6 -> 52.sp; item.length <= 14 -> 40.sp; else -> 32.sp },
+                        item, textAlign = TextAlign.Center, fontWeight = FontWeight.ExtraBold, color = Ui.Ink,
+                        fontSize = when { item.length <= 2 -> 84.sp; item.length <= 6 -> 46.sp; item.length <= 14 -> 30.sp; else -> 22.sp },
+                        lineHeight = when { item.length <= 2 -> 92.sp; item.length <= 6 -> 54.sp; item.length <= 14 -> 40.sp; else -> 32.sp },
                     )
                 }
-                LinearProgressIndicator(
-                    progress = { (level * 5f).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = if (level > 0.19f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                // 소리 물결: 녹음 중에는 음량에 따라 움직인다
+                val gain = if (running) (0.25f + level * 9f).coerceAtMost(1.3f) else 0.6f
+                WaveBars(
+                    remember { List(41) { i -> 0.12f + 0.88f * kotlin.math.abs(kotlin.math.sin(i * 0.47f)) * (1f - kotlin.math.abs(i - 20) / 26f) } }.map { it * gain },
+                    Modifier.fillMaxWidth().height(34.dp),
+                    brush = if (level > 0.19f) Ui.Stop else Ui.Cta, alpha = if (running) 0.9f else 0.35f,
                 )
-                Text(
-                    when {
-                        !running -> "시작을 누르고 화면의 글을 읽으세요"
-                        calibrating -> "주변 소음을 재는 중… 잠깐 조용히"
-                        speaking -> "듣고 있습니다…"
-                        else -> "지금 읽으세요"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    Modifier.fillMaxWidth().clip(CircleShape).background(Color(0xFFE4F3F8)).padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(AppIcons.Volume, null, tint = Ui.Blue, modifier = Modifier.size(22.dp))
+                    Text(
+                        when {
+                            !running -> "시작을 누르고 화면의 글을 읽으세요"
+                            calibrating -> "주변 소음을 재는 중… 잠깐 조용히"
+                            speaking -> "듣고 있습니다…"
+                            else -> "지금 읽으세요"
+                        },
+                        Modifier.padding(start = 10.dp), color = Ui.Ink, fontSize = 15.sp,
+                    )
+                }
             }
         }
 
         if (status.isNotEmpty()) Text(
-            status, fontWeight = FontWeight.Medium,
-            color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            status, Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.SemiBold,
+            color = if (warn) MaterialTheme.colorScheme.error else Ui.Blue,
         )
 
         if (running) {
-            Button(
-                onClick = { recorder.stop(); status = "녹음을 멈췄습니다."; warn = false }, modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) { Text("■  녹음 멈춤", fontSize = 18.sp, modifier = Modifier.padding(vertical = 6.dp)) }
+            GradientButton(onClick = { recorder.stop(); status = "녹음을 멈췄습니다."; warn = false }, modifier = Modifier.fillMaxWidth(), brush = Ui.Stop) {
+                Box(Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)).background(Color.White))
+                Text("녹음 멈춤", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            }
         } else {
-            Button(onClick = {
+            GradientButton(onClick = {
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) start()
                 else askMic.launch(Manifest.permission.RECORD_AUDIO)
-            }, modifier = Modifier.fillMaxWidth()) { Text("●  녹음 시작", fontSize = 18.sp, modifier = Modifier.padding(vertical = 6.dp)) }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Box(Modifier.size(26.dp).clip(CircleShape).background(Color.White))
+                Text("녹음 시작", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            }
         }
 
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { index = (index - 1 + items.size) % items.size; status = "" }) { Text("◀ 이전") }
-            OutlinedButton(onClick = { index = (index + 1) % items.size; status = "" }) { Text("다음 ▶") }
-            OutlinedButton(enabled = recorded, onClick = {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton("이전", leading = AppIcons.PlayBack, onClick = { index = (index - 1 + items.size) % items.size; status = "" })
+            PillButton("다음", trailing = AppIcons.Play, onClick = { index = (index + 1) % items.size; status = "" })
+            PillButton("듣기", leading = AppIcons.Play, enabled = recorded, onClick = {
                 store.loadText(item)?.let { a ->
                     recorder.muted = true
                     player.play(Dsp.normalizePeak(Dsp.trimSilence(a, sr))) { recorder.muted = false }
                 }
-            }) { Text("듣기") }
-            OutlinedButton(enabled = recorded, onClick = { store.delete(item); status = "\"$item\" 녹음을 지웠습니다."; warn = false }) { Text("지우기") }
+            })
+            PillButton("지우기", leading = AppIcons.Refresh, enabled = recorded, onClick = { store.delete(item); status = "\"$item\" 녹음을 지웠습니다."; warn = false })
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Switch(checked = skipDone, onCheckedChange = { skipDone = it })
-            Text("이미 녹음한 것은 건너뛰기", style = MaterialTheme.typography.bodyMedium)
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Switch(
+                    checked = skipDone, onCheckedChange = { skipDone = it },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Ui.Teal, checkedThumbColor = Color.White),
+                )
+                Text("이미 녹음한 것은 건너뛰기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
+            }
+            Note(tip)
         }
-
-        Note(tip)
 
         // 묶음 전체: 눌러서 고르기
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for ((i, t) in items.withIndex()) {
                 val has = remember(ver, t) { store.hasText(t) }
                 val cur = i == index
                 Surface(
                     onClick = { index = i; status = "" },
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (has) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(if (cur) 2.dp else 1.dp, if (cur) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (has) Color(0xFFCFF3F1) else Color.White,
+                    border = BorderStroke(if (cur) 2.dp else 1.dp, if (cur) Ui.Teal else Ui.Line),
                 ) {
                     Text(
-                        t, Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        fontSize = if (t.length <= 2) 18.sp else 14.sp,
-                        fontWeight = if (cur) FontWeight.Bold else FontWeight.Normal,
+                        t, Modifier.padding(horizontal = if (t.length <= 2) 15.dp else 12.dp, vertical = 10.dp),
+                        fontSize = if (t.length <= 2) 20.sp else 15.sp, color = Ui.Ink,
+                        fontWeight = if (cur) FontWeight.ExtraBold else FontWeight.Medium,
                     )
                 }
             }

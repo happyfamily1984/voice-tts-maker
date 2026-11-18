@@ -2,7 +2,25 @@ package com.happyfamily.voicetts.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import com.happyfamily.voicetts.BuildConfig
+import com.happyfamily.voicetts.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -47,23 +65,38 @@ private fun catDone(store: VoiceStore, c: PromptCategory) = c.groups.sumOf { sto
 private fun catTotal(c: PromptCategory) = c.groups.sumOf { it.items.size }
 
 @Composable
-fun HomeScreen(store: VoiceStore, go: (Screen) -> Unit) {
+fun HomeScreen(store: VoiceStore, go: (Screen) -> Unit, onSettings: () -> Unit) {
     val ver by store.changes.collectAsState()
-    Page("내 목소리 TTS", null) {
+    Page("내 목소리 TTS", null, onSettings) {
         val base = Prompts.categories.filter { it.id == "syllable" || it.id == "coda" }
         val baseDone = remember(ver) { base.sumOf { catDone(store, it) } }
         val baseTotal = base.sumOf { catTotal(it) }
         val pct = baseDone * 100 / baseTotal
 
-        Panel(color = MaterialTheme.colorScheme.primaryContainer) {
-            Text("글자 읽기 준비 $pct%", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                when {
-                    store.count() == 0 -> "아직 녹음이 없습니다. 아래 '이어서 녹음'을 눌러 시작하세요. 녹음한 만큼 바로 쓸 수 있습니다."
-                    pct < 100 -> "녹음한 글자는 지금 바로 읽을 수 있습니다. ①기본 음절과 ②받침 소리를 다 채우면 어떤 글이든 읽습니다."
-                    else -> "모든 한글을 읽을 수 있습니다. ③~⑤와 내 문구를 더 녹음할수록 자연스러워집니다."
+        // 준비 상태
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Image(painterResource(R.drawable.app_icon), null, Modifier.size(84.dp))
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(Ui.Tint).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        buildAnnotatedString {
+                            append("글자 읽기 준비 ")
+                            withStyle(SpanStyle(color = Ui.Blue, fontSize = 26.sp)) { append("$pct%") }
+                        },
+                        fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0E4A52),
+                    )
+                    Note(
+                        when {
+                            store.count() == 0 -> "아직 녹음이 없습니다. 아래 '이어서 녹음'을 눌러 시작하세요. 녹음한 만큼 바로 쓸 수 있습니다."
+                            pct < 100 -> "녹음한 글자는 지금 바로 읽을 수 있습니다. ①과 ②를 다 채우면 어떤 글이든 읽습니다."
+                            else -> "모든 한글을 읽을 수 있습니다. ③~⑥을 더 녹음할수록 자연스러워집니다."
+                        }
+                    )
                 }
-            )
+            }
         }
 
         // 다음에 녹음할 묶음 추천
@@ -73,30 +106,76 @@ fun HomeScreen(store: VoiceStore, go: (Screen) -> Unit) {
             }
         }
         if (next != null) {
-            Button(onClick = { go(Screen.Session(next.first.id, next.second.id)) }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🎙  이어서 녹음", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("${next.first.title} · ${next.second.title}", fontSize = 13.sp)
+            GradientButton(onClick = { go(Screen.Session(next.first.id, next.second.id)) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(AppIcons.Mic, null, Modifier.size(34.dp))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("이어서 녹음", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("${next.first.title} · ${next.second.title}", fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                Icon(AppIcons.Right, null, Modifier.size(30.dp))
             }
         }
 
-        Panel(onClick = { go(Screen.Categories) }) {
-            Text("녹음 목록 전체 보기  ›", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            for (c in Prompts.categories) ProgressLine(c.title, remember(ver) { catDone(store, c) }, catTotal(c))
+        // 녹음 목록
+        Panel {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { go(Screen.Categories) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(AppIcons.Note, null, tint = Ui.Blue, modifier = Modifier.size(24.dp))
+                Text("녹음 목록 전체 보기", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Ui.Ink)
+                Icon(AppIcons.Right, null, tint = Ui.Ink, modifier = Modifier.size(24.dp))
+            }
+            for ((i, c) in Prompts.categories.withIndex()) {
+                HomeRow(i + 1, c.title.drop(2), remember(ver) { catDone(store, c) }, catTotal(c)) { go(Screen.Groups(c.id)) }
+            }
             val custom = remember(ver) { store.customPhrases() }
-            ProgressLine("⑥ 내 문구", remember(ver) { store.done(custom) }, custom.size)
+            HomeRow(Prompts.categories.size + 1, "내 문구", remember(ver) { store.done(custom) }, custom.size) { go(Screen.Groups(Prompts.CUSTOM)) }
         }
+
         Panel(onClick = { go(Screen.Speak) }) {
-            Text("🔊  말해 보기 · 소리 파일 만들기  ›", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Note("글을 입력하면 내 목소리로 읽고, WAV 파일·벨소리·알림음·알람음으로 내보냅니다.")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(Ui.Tint), contentAlignment = Alignment.Center) {
+                    WaveBars(LogoWave, Modifier.size(width = 36.dp, height = 30.dp))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CardTitle("✨ 말해 보기 · 소리 파일 만들기")
+                    Note("글을 입력하면 내 목소리로 읽고, WAV 파일·벨소리·알림음·알람음으로 내보냅니다.")
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun HomeRow(n: Int, title: String, done: Int, total: Int, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = Color(0xB3FFFFFF), border = BorderStroke(1.dp, Ui.Line)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                NumberBadge(n)
+                Text(title, Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ui.Ink)
+                Text("$done / $total", fontSize = 15.sp, color = Ui.Sub)
+                Icon(AppIcons.Right, null, tint = Ui.Ink, modifier = Modifier.size(22.dp))
+            }
+            Bar(if (total == 0) 0f else done.toFloat() / total, Modifier.padding(start = 34.dp, end = 30.dp))
+        }
+    }
+}
+
+@Composable
+fun MoreScreen(go: (Screen) -> Unit, back: () -> Unit) {
+    Page("더보기", back) {
         Panel(onClick = { go(Screen.Apply) }) {
-            Text("📲  휴대폰에 적용 · 내보내기  ›", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            CardTitle("📲  휴대폰에 적용 · 내보내기  ›")
             Note("휴대폰 전체 읽어주기 목소리로 설정, 목소리 팩 백업, AI 학습용 데이터셋 내보내기.")
         }
         Panel(onClick = { go(Screen.Tips) }) {
-            Text("💡  잘 녹음하는 요령  ›", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            CardTitle("💡  잘 녹음하는 요령  ›")
+            Note("조용한 곳, 같은 거리, 같은 높이로 읽는 방법을 안내합니다.")
+        }
+        Panel {
+            CardTitle("앱 정보")
+            Note("내 목소리 TTS ${BuildConfig.VERSION_NAME}\n녹음은 이 휴대폰 안에만 저장되고 밖으로 전송되지 않습니다.")
         }
     }
 }
@@ -108,13 +187,13 @@ fun CategoriesScreen(store: VoiceStore, go: (Screen) -> Unit, back: () -> Unit) 
         Note("위에서부터 차례로 하면 됩니다. 중간에 멈춰도 녹음한 것은 모두 저장되어 바로 쓰입니다.")
         for (c in Prompts.categories) {
             Panel(onClick = { go(Screen.Groups(c.id)) }) {
-                Text(c.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(c.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
                 Note(c.summary)
                 ProgressLine("녹음", remember(ver) { catDone(store, c) }, catTotal(c))
             }
         }
         Panel(onClick = { go(Screen.Groups(Prompts.CUSTOM)) }) {
-            Text("⑥ 내 문구 추가", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("⑥ 내 문구 추가", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note("이름, 주소, 자주 하는 말처럼 내가 쓸 문구를 직접 넣어 통째로 녹음합니다.")
             val custom = remember(ver) { store.customPhrases() }
             ProgressLine("녹음", remember(ver) { store.done(custom) }, custom.size)
@@ -133,7 +212,7 @@ fun GroupsScreen(store: VoiceStore, catId: String, go: (Screen) -> Unit, back: (
             Note("녹음하고 싶은 낱말이나 문장을 추가하세요. 예: 내 이름, 가족 이름, 집 주소, 자주 보내는 안내 문구.")
             OutlinedTextField(
                 value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("추가할 문구") }, minLines = 2,
+                label = { Text("추가할 문구") }, minLines = 2, shape = RoundedCornerShape(20.dp), colors = fieldColors(),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
@@ -226,17 +305,18 @@ fun SpeakScreen(store: VoiceStore, back: () -> Unit) {
     Page("말해 보기 · 파일 만들기", back) {
         OutlinedTextField(
             value = text, onValueChange = { text = it; result = null }, modifier = Modifier.fillMaxWidth(),
-            label = { Text("읽을 글") }, minLines = 3,
+            label = { Text("읽을 글") }, minLines = 3, shape = RoundedCornerShape(20.dp), colors = fieldColors(),
         )
         Column {
             Text("빠르기 ${"%.1f".format(speed)}배", style = MaterialTheme.typography.bodyMedium)
             Slider(value = speed, onValueChange = { speed = (it * 10).toInt() / 10f; result = null }, valueRange = 0.6f..1.8f)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { make { player.play(it.audio) } }, enabled = !busy && text.isNotBlank(), modifier = Modifier.weight(1f)) {
-                Text(if (busy) "만드는 중…" else "▶  말하기", fontSize = 17.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            GradientButton(onClick = { make { player.play(it.audio) } }, enabled = !busy && text.isNotBlank(), modifier = Modifier.weight(1f)) {
+                if (!busy) Icon(AppIcons.Play, null, Modifier.size(26.dp))
+                Text(if (busy) "만드는 중…" else "말하기", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(onClick = { player.stop() }, enabled = playing) { Text("■ 멈춤") }
+            PillButton("멈춤", onClick = { player.stop() }, enabled = playing)
         }
         if (msg.isNotEmpty()) Panel(color = MaterialTheme.colorScheme.secondaryContainer) { Text(msg) }
         result?.let { r ->
@@ -250,7 +330,7 @@ fun SpeakScreen(store: VoiceStore, back: () -> Unit) {
             }
         }
         Panel {
-            Text("소리 파일로 내보내기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("소리 파일로 내보내기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note("위 글을 내 목소리 WAV 파일로 만듭니다.")
             ExportButtons(enabled = !busy && text.isNotBlank(), onKind = { export(it) },
                 onShare = { make { Exporter.share(ctx, it.audio, store.sampleRate, text) } })
@@ -310,7 +390,7 @@ fun ApplyScreen(store: VoiceStore, back: () -> Unit) {
         if (msg.isNotEmpty()) Panel(color = MaterialTheme.colorScheme.secondaryContainer) { Text(msg) }
 
         Panel {
-            Text("① 휴대폰 전체 읽어주기 목소리로 쓰기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("① 휴대폰 전체 읽어주기 목소리로 쓰기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note(
                 "설정 화면에서 '기본 엔진'을 '내 목소리 TTS'로 바꾸면 내비게이션, 전자책·웹페이지 읽어주기, " +
                     "알림 읽기, 화면 읽어주기 등 휴대폰의 TTS를 쓰는 모든 앱이 내 목소리로 말합니다. " +
@@ -319,11 +399,11 @@ fun ApplyScreen(store: VoiceStore, back: () -> Unit) {
             Button(onClick = { Exporter.openTtsSettings(ctx) }) { Text("텍스트 음성 변환 설정 열기") }
         }
         Panel {
-            Text("② 벨소리·알림음·알람음·소리 파일", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("② 벨소리·알림음·알람음·소리 파일", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note("'말해 보기 · 파일 만들기' 화면에서 원하는 글을 입력해 WAV 파일로 저장하거나 기본 소리로 지정합니다. WAV는 영상 편집, PC, 스마트 스피커 등 어디서나 쓸 수 있습니다.")
         }
         Panel {
-            Text("③ 목소리 팩 (백업·다른 기기로 옮기기)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("③ 목소리 팩 (백업·다른 기기로 옮기기)", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note("지금까지의 녹음 ${remember(ver) { store.count() }}개를 파일 하나(.zip)로 저장합니다. 새 휴대폰에서 이 앱을 깔고 '가져오기'를 하면 그대로 이어집니다.")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { savePack.launch("내목소리팩.zip") }, enabled = !busy && store.count() > 0) { Text("내보내기") }
@@ -331,7 +411,7 @@ fun ApplyScreen(store: VoiceStore, back: () -> Unit) {
             }
         }
         Panel {
-            Text("④ AI 목소리 학습용 데이터셋", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("④ AI 목소리 학습용 데이터셋", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ui.Ink)
             Note(
                 "녹음한 낱말·문장을 '소리 + 대본' 묶음(LJSpeech 형식 .zip)으로 내보냅니다. " +
                     "PC나 클라우드의 음성 학습 도구(GPT-SoVITS, Piper 등)에 넣으면 사람처럼 자연스러운 내 목소리 AI 모델을 만들 수 있습니다. " +
@@ -341,3 +421,9 @@ fun ApplyScreen(store: VoiceStore, back: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun fieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = Color.White, unfocusedContainerColor = Ui.Glass,
+    unfocusedBorderColor = Color(0xFFA6E3E6), focusedBorderColor = Ui.Blue,
+)
