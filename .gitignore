@@ -159,4 +159,4 @@ local.properties
 .gradle/
 build/
 *.apk
-!dist/*.apk
+dist/

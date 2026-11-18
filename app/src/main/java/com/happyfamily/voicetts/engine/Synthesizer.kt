@@ -82,7 +82,8 @@ class Synthesizer(private val bank: UnitBank) {
             first = false
             i += used
         }
-        var audio = out.toArray()
+        // 쓸 수 있는 소리가 하나도 없으면 무음 대신 빈 결과를 돌려준다
+        var audio = if (whole == 0 && pieces == 0) FloatArray(0) else out.toArray()
         if (audio.isNotEmpty()) audio = Dsp.stretch(audio, speed.coerceIn(0.5f, 2.5f), sr)
         return Result(audio, missing.toList(), whole, pieces)
     }
