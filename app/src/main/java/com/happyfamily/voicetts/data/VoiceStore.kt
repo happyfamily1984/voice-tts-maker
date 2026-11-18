@@ -1,6 +1,7 @@
 package com.happyfamily.voicetts.data
 
 import android.content.Context
+import com.happyfamily.voicetts.engine.Denoise
 import com.happyfamily.voicetts.engine.Dsp
 import com.happyfamily.voicetts.engine.Synthesizer
 import com.happyfamily.voicetts.engine.TextNormalizer
@@ -24,10 +25,18 @@ class VoiceStore(private val dir: File) : UnitBank {
     override val sampleRate = SAMPLE_RATE
     private val entries = LinkedHashMap<String, Entry>()
     private val customList = ArrayList<String>()
+    private var ready = false
     /** 화면 갱신용: 녹음이 바뀔 때마다 증가 */
     val changes = MutableStateFlow(0)
     override val version: Int get() = changes.value
     val synthesizer = Synthesizer(this)
+
+    /** 잡음 제거 세기(0 끔 ~ 3 강하게). 원본은 그대로 두고 읽을 때 적용한다. */
+    override var denoiseLevel: Int = 2
+        set(v) { field = v.coerceIn(0, 3); persist() }
+    /** 톤 변화(반음, -8 ~ +8). 휴대폰 전체 TTS에도 적용된다. */
+    var tone: Float = 0f
+        set(v) { field = v.coerceIn(-8f, 8f); persist() }
 
     init {
         dir.mkdirs()
@@ -43,12 +52,17 @@ class VoiceStore(private val dir: File) : UnitBank {
                 }
                 val cs = root.optJSONArray("custom") ?: JSONArray()
                 for (i in 0 until cs.length()) customList.add(cs.getString(i))
+                denoiseLevel = root.optInt("denoise", 2)
+                tone = root.optDouble("tone", 0.0).toFloat()
             }
         }
+        ready = true
     }
 
-    private fun persist() {
+    @Synchronized private fun persist() {
+        if (!ready) return
         val root = JSONObject()
+        root.put("denoise", denoiseLevel).put("tone", tone.toDouble())
         val arr = JSONArray()
         for (e in entries.values) arr.put(
             JSONObject().put("key", e.key).put("text", e.text).put("file", e.file).put("category", e.category)
@@ -78,6 +92,11 @@ class VoiceStore(private val dir: File) : UnitBank {
     }
 
     fun loadText(text: String) = load(TextNormalizer.key(text))
+
+    /** 들어 보기용: 잡음 제거·무음 자르기·음량 맞춤을 거친 소리 */
+    fun cleanText(text: String): FloatArray? = loadText(text)?.let {
+        Dsp.normalizePeak(Dsp.trimSilence(Denoise.reduce(it, sampleRate, denoiseLevel), sampleRate))
+    }
 
     @Synchronized fun save(text: String, category: String, audio: FloatArray): Boolean {
         val key = TextNormalizer.key(text)
@@ -172,7 +191,7 @@ class VoiceStore(private val dir: File) : UnitBank {
             for ((i, e) in list.withIndex()) {
                 val id = "%04d".format(i + 1)
                 val raw = Dsp.toFloat(Wav.read(File(dir, e.file)).pcm)
-                val clean = Dsp.normalizePeak(Dsp.trimSilence(raw, sampleRate), 0.9f)
+                val clean = Dsp.normalizePeak(Dsp.trimSilence(Denoise.reduce(raw, sampleRate, denoiseLevel), sampleRate), 0.9f)
                 // 앞뒤로 0.1초 여백
                 val pad = sampleRate / 10
                 val pcm = ShortArray(clean.size + pad * 2)

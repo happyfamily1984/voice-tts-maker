@@ -17,7 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.withStyle
 import com.happyfamily.voicetts.BuildConfig
 import com.happyfamily.voicetts.R
@@ -163,7 +165,7 @@ private fun HomeRow(n: Int, title: String, done: Int, total: Int, onClick: () ->
 }
 
 @Composable
-fun MoreScreen(go: (Screen) -> Unit, back: () -> Unit) {
+fun MoreScreen(store: VoiceStore, go: (Screen) -> Unit, back: () -> Unit) {
     Page("더보기", back) {
         Panel(onClick = { go(Screen.Apply) }) {
             CardTitle("📲  휴대폰에 적용 · 내보내기  ›")
@@ -173,6 +175,7 @@ fun MoreScreen(go: (Screen) -> Unit, back: () -> Unit) {
             CardTitle("💡  잘 녹음하는 요령  ›")
             Note("조용한 곳, 같은 거리, 같은 높이로 읽는 방법을 안내합니다.")
         }
+        SoundSettings(store) {}
         Panel {
             CardTitle("앱 정보")
             Note("내 목소리 TTS ${BuildConfig.VERSION_NAME}\n녹음은 이 휴대폰 안에만 저장되고 밖으로 전송되지 않습니다.")
@@ -280,7 +283,7 @@ fun SpeakScreen(store: VoiceStore, back: () -> Unit) {
         if (busy) return
         scope.launch {
             busy = true; msg = ""
-            val r = withContext(Dispatchers.Default) { runCatching { store.synthesizer.synthesize(text, speed) }.getOrNull() }
+            val r = withContext(Dispatchers.Default) { runCatching { store.synthesizer.synthesize(text, speed, store.tone) }.getOrNull() }
             busy = false
             result = r
             when {
@@ -311,6 +314,7 @@ fun SpeakScreen(store: VoiceStore, back: () -> Unit) {
             Text("빠르기 ${"%.1f".format(speed)}배", style = MaterialTheme.typography.bodyMedium)
             Slider(value = speed, onValueChange = { speed = (it * 10).toInt() / 10f; result = null }, valueRange = 0.6f..1.8f)
         }
+        SoundSettings(store) { result = null }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             GradientButton(onClick = { make { player.play(it.audio) } }, enabled = !busy && text.isNotBlank(), modifier = Modifier.weight(1f)) {
                 if (!busy) Icon(AppIcons.Play, null, Modifier.size(26.dp))
@@ -427,3 +431,45 @@ private fun fieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults
     focusedContainerColor = Color.White, unfocusedContainerColor = Ui.Glass,
     unfocusedBorderColor = Color(0xFFA6E3E6), focusedBorderColor = Ui.Blue,
 )
+
+/** 잡음 제거·톤 변화 설정. 여기서 바꾼 값은 말해 보기, 파일 내보내기, 휴대폰 전체 TTS에 모두 적용된다. */
+@Composable
+fun SoundSettings(store: VoiceStore, onChange: () -> Unit) {
+    val ver by store.changes.collectAsState()
+    val level = remember(ver) { store.denoiseLevel }
+    var tone by remember { mutableFloatStateOf(store.tone) }
+    Panel {
+        CardTitle("잡음 제거")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((i, name) in listOf("끔", "약하게", "보통", "강하게").withIndex()) {
+                val on = i == level
+                Surface(
+                    onClick = { store.denoiseLevel = i; onChange() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(50),
+                    color = if (on) Ui.Blue else Color.White, border = BorderStroke(1.dp, if (on) Ui.Blue else Color(0xFFA6E3E6)),
+                ) {
+                    Text(
+                        name, Modifier.padding(vertical = 10.dp), textAlign = TextAlign.Center, fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold, color = if (on) Color.White else Ui.Ink,
+                    )
+                }
+            }
+        }
+        Note("녹음에 섞인 선풍기·에어컨 소리, '쉬-' 하는 잡음, 웅웅거림을 덜어 냅니다. 원본 녹음은 그대로 두므로 언제든 바꿀 수 있습니다. 너무 세면 목소리가 얇아질 수 있습니다.")
+
+        CardTitle("톤 변화  " + when {
+            tone > 0.05f -> "높게 +${"%.1f".format(tone)}"
+            tone < -0.05f -> "낮게 ${"%.1f".format(tone)}"
+            else -> "원래 목소리"
+        })
+        Slider(
+            value = tone, onValueChange = { tone = (it * 2).roundToInt() / 2f },
+            onValueChangeFinished = { store.tone = tone; onChange() }, valueRange = -6f..6f,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((name, v) in listOf("낮고 굵게" to -3f, "원래대로" to 0f, "높고 밝게" to 3f)) {
+                PillButton(name, onClick = { tone = v; store.tone = v; onChange() })
+            }
+        }
+        Note("말하는 길이는 그대로 두고 목소리 높낮이만 바꿉니다(반음 단위). 2~3 정도까지가 자연스럽습니다.")
+    }
+}

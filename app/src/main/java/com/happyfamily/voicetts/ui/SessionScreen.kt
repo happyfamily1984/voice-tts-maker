@@ -214,9 +214,9 @@ fun SessionScreen(
             PillButton("이전", leading = AppIcons.PlayBack, onClick = { index = (index - 1 + items.size) % items.size; status = "" })
             PillButton("다음", trailing = AppIcons.Play, onClick = { index = (index + 1) % items.size; status = "" })
             PillButton("듣기", leading = AppIcons.Play, enabled = recorded, onClick = {
-                store.loadText(item)?.let { a ->
+                store.cleanText(item)?.let { a ->
                     recorder.muted = true
-                    player.play(Dsp.normalizePeak(Dsp.trimSilence(a, sr))) { recorder.muted = false }
+                    player.play(a) { recorder.muted = false }
                 }
             })
             PillButton("지우기", leading = AppIcons.Refresh, enabled = recorded, onClick = { store.delete(item); status = "\"$item\" 녹음을 지웠습니다."; warn = false })

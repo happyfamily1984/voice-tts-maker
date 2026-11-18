@@ -40,7 +40,9 @@ class MyVoiceTtsService : TextToSpeechService() {
             val store = VoiceStore.get(this)
             val text = request.charSequenceText?.toString().orEmpty()
             val speed = (request.speechRate / 100f).coerceIn(0.5f, 2.5f)
-            val audio = store.synthesizer.synthesize(text, speed).audio
+            // 앱에서 정한 톤 + 시스템 설정의 음높이(100이 보통)
+            val sysTone = 12f * (kotlin.math.ln(request.pitch.coerceIn(25, 400) / 100f) / kotlin.math.ln(2f))
+            val audio = store.synthesizer.synthesize(text, speed, store.tone + sysTone).audio
             callback.start(store.sampleRate, AudioFormat.ENCODING_PCM_16BIT, 1)
             val pcm = Dsp.toPcm(audio)
             val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN)

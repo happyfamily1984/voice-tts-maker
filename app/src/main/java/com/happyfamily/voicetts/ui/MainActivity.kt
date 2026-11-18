@@ -93,7 +93,7 @@ fun App(onExit: () -> Unit) {
                         )
                     }
                     Screen.Speak -> SpeakScreen(store, back)
-                    Screen.More -> MoreScreen(go, back)
+                    Screen.More -> MoreScreen(store, go, back)
                     Screen.Apply -> ApplyScreen(store, back)
                     Screen.Tips -> TipsScreen(back)
                 }

@@ -125,4 +125,48 @@ class EngineTest {
         assertEquals(44100, a.sampleRate)
         assertArrayEquals(pcm, a.pcm)
     }
+
+    @Test fun noiseReductionRemovesHissKeepsVoice() {
+        val sr = 44100
+        val rnd = java.util.Random(7)
+        val n = sr * 2
+        // 0.5초 무음 + 1초 목소리(여러 배음) + 0.5초 무음, 전체에 잡음
+        val clean = FloatArray(n) { i ->
+            if (i in sr / 2 until sr * 3 / 2) (1..6).sumOf { h -> 0.25 / h * sin(2 * PI * 140 * h * i / sr) }.toFloat() else 0f
+        }
+        val noisy = FloatArray(n) { clean[it] + (rnd.nextGaussian() * 0.02).toFloat() }
+        val out = Denoise.reduce(noisy, sr, 2)
+        assertEquals(n, out.size)
+        val noiseBefore = Dsp.rms(noisy, 0, sr / 3)
+        val noiseAfter = Dsp.rms(out, 0, sr / 3)
+        assertTrue("잡음 $noiseBefore -> $noiseAfter", noiseAfter < noiseBefore * 0.3f)
+        val voiceBefore = Dsp.rms(clean, sr * 3 / 4, sr * 5 / 4)
+        val voiceAfter = Dsp.rms(out, sr * 3 / 4, sr * 5 / 4)
+        assertTrue("목소리 $voiceBefore -> $voiceAfter", voiceAfter in voiceBefore * 0.85f..voiceBefore * 1.1f)
+        // 목소리 구간의 오차도 줄어야 한다
+        fun err(a: FloatArray) = Dsp.rms(FloatArray(sr / 2) { a[sr * 3 / 4 + it] - clean[sr * 3 / 4 + it] })
+        assertTrue("오차 ${err(noisy)} -> ${err(out)}", err(out) < err(noisy))
+        // 끔이면 그대로
+        assertTrue(Denoise.reduce(noisy, sr, 0) === noisy)
+    }
+
+    @Test fun toneChangesPitchNotLength() {
+        val bank = MemBank()
+        bank.tone("아", 200.0, 1500)
+        val synth = Synthesizer(bank)
+        fun hz(a: FloatArray): Float {
+            val from = a.size / 4; val to = a.size * 3 / 4
+            var z = 0
+            for (i in from + 1 until to) if (a[i - 1] < 0 && a[i] >= 0) z++
+            return z * 44100f / (to - from)
+        }
+        val base = synth.synthesize("아").audio
+        val up = synth.synthesize("아", 1f, 12f).audio
+        val down = synth.synthesize("아", 1f, -5f).audio
+        assertEquals(200f, hz(base), 6f)
+        assertEquals(400f, hz(up), 14f)
+        assertEquals(200f * Math.pow(2.0, -5 / 12.0).toFloat(), hz(down), 8f)
+        assertEquals(1f, up.size.toFloat() / base.size, 0.08f)
+        assertEquals(1f, down.size.toFloat() / base.size, 0.08f)
+    }
 }

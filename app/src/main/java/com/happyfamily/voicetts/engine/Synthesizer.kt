@@ -9,8 +9,10 @@ interface UnitBank {
     fun has(key: String): Boolean
     /** 원본 녹음(가공 전). 없으면 null. */
     fun load(key: String): FloatArray?
-    /** 녹음이 바뀔 때마다 증가. 캐시 무효화용. */
+    /** 녹음이나 소리 설정이 바뀔 때마다 증가. 캐시 무효화용. */
     val version: Int
+    /** 잡음 제거 세기: 0 끔 ~ 3 강하게 */
+    val denoiseLevel: Int get() = 0
 }
 
 /**
@@ -35,14 +37,18 @@ class Synthesizer(private val bank: UnitBank) {
         if (cacheVersion != bank.version) { cache.clear(); cacheVersion = bank.version }
         cache[key]?.let { return it }
         val raw = bank.load(key) ?: return null
-        val t = Dsp.trimSilence(raw, sr)
+        val t = Dsp.trimSilence(Denoise.reduce(raw, sr, bank.denoiseLevel), sr)
         if (t.size < ms(30)) return null
         val u = Dsp.fade(Dsp.normalizePeak(t), sr)
         cache[key] = u
         return u
     }
 
-    fun synthesize(text: String, speed: Float = 1f): Result {
+    /**
+     * @param speed 빠르기(1 = 보통)
+     * @param tone 톤 변화(반음 단위, +면 높게 -면 낮게). 길이는 그대로 두고 음높이만 바꾼다.
+     */
+    fun synthesize(text: String, speed: Float = 1f, tone: Float = 0f): Result {
         val tokens = TextNormalizer.tokenize(text)
         val out = FloatBuf()
         val missing = LinkedHashSet<String>()
@@ -84,7 +90,12 @@ class Synthesizer(private val bank: UnitBank) {
         }
         // 쓸 수 있는 소리가 하나도 없으면 무음 대신 빈 결과를 돌려준다
         var audio = if (whole == 0 && pieces == 0) FloatArray(0) else out.toArray()
-        if (audio.isNotEmpty()) audio = Dsp.stretch(audio, speed.coerceIn(0.5f, 2.5f), sr)
+        if (audio.isNotEmpty()) {
+            // 톤: 길이를 ratio배로 늘린 뒤 ratio배 빠르게 다시 뽑으면 길이는 같고 음높이만 변한다
+            val ratio = Math.pow(2.0, tone.coerceIn(-12f, 12f) / 12.0).toFloat()
+            audio = Dsp.stretch(audio, (speed.coerceIn(0.5f, 2.5f) / ratio).coerceIn(0.3f, 4f), sr)
+            audio = Dsp.resample(audio, ratio)
+        }
         return Result(audio, missing.toList(), whole, pieces)
     }
 

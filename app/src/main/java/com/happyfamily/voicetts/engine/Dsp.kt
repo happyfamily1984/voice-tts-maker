@@ -137,4 +137,16 @@ object Dsp {
         for (i in 0 until min(hs, y.size)) { val w = win[i]; if (w > 0.05f) y[i] /= w else y[i] = 0f }
         return y.copyOf(min(outLen, max(0, (k - 1) * hs + n)))
     }
+
+    /** 재생 속도를 ratio배로 바꾼다(길이는 1/ratio, 음높이는 ratio배). */
+    fun resample(x: FloatArray, ratio: Float): FloatArray {
+        if (abs(ratio - 1f) < 0.003f || x.size < 2) return x
+        val n = (x.size / ratio).toInt()
+        return FloatArray(n) {
+            val p = it * ratio
+            val i = p.toInt().coerceAtMost(x.size - 2)
+            val f = p - i
+            x[i] * (1 - f) + x[i + 1] * f
+        }
+    }
 }
